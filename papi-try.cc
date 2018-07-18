@@ -79,8 +79,21 @@ static void complain(int ret, int r0only, const char* format, ...) {
   va_end(ap);
 }
 
+/*
+ * PAPI helpers
+ */
 static void PAPI_complain(int err, const char* msg) {
   complain(EXIT_FAILURE, 0, "PAPI %s: %s", msg, PAPI_strerror(err));
+}
+
+static void PAPI_clear(int EventSet) {
+  int rv = PAPI_reset(EventSet);
+  if (rv != PAPI_OK) PAPI_complain(rv, "reset");
+}
+
+static void PAPI_fetch(int EventSet, long long* value) {
+  int rv = PAPI_read(EventSet, value);
+  if (rv != PAPI_OK) PAPI_complain(rv, "read");
 }
 
 /*
@@ -207,13 +220,10 @@ static void doit() {
   if (rv != PAPI_OK) PAPI_complain(rv, "start");
 
   for (;;) {
-    rv = PAPI_reset(EventSet);
-    if (rv != PAPI_OK) PAPI_complain(rv, "reset");
-
+    PAPI_clear(EventSet);
     runops(1 << 20);
 
-    rv = PAPI_read(EventSet, &value);
-    if (rv != PAPI_OK) PAPI_complain(rv, "read");
+    PAPI_fetch(EventSet, &value);
     break;
   }
 
