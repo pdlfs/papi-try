@@ -49,6 +49,9 @@
 
 #include <mpi.h>
 
+/* max events to monitor */
+#define MAX_EVENTS 16
+
 /*
  * helper/utility functions, included inline here so we are self-contained
  * in one single source file...
@@ -80,23 +83,6 @@ static void complain(int ret, int r0only, const char* format, ...) {
 }
 
 /*
- * PAPI helpers
- */
-static void PAPI_complain(int err, const char* msg) {
-  complain(EXIT_FAILURE, 0, "PAPI %s: %s", msg, PAPI_strerror(err));
-}
-
-static void PAPI_clear(int EventSet) {
-  int rv = PAPI_reset(EventSet);
-  if (rv != PAPI_OK) PAPI_complain(rv, "reset");
-}
-
-static void PAPI_fetch(int EventSet, long long* value) {
-  int rv = PAPI_read(EventSet, value);
-  if (rv != PAPI_OK) PAPI_complain(rv, "read");
-}
-
-/*
  * default values
  */
 #define DEF_TIMEOUT 120 /* alarm timeout */
@@ -105,8 +91,10 @@ static void PAPI_fetch(int EventSet, long long* value) {
  * gs: shared global data (e.g. from the command line)
  */
 static struct gs {
-  int size;    /* world size (from MPI) */
-  int timeout; /* alarm timeout */
+  int size;                      /* world size (from MPI) */
+  int timeout;                   /* alarm timeout */
+  const char* names[MAX_EVENTS]; /* names of the events to monitor */
+  int n;                         /* number of events */
 } g;
 
 /*
@@ -117,6 +105,70 @@ static void sigalarm(int foo) {
   fprintf(stderr, "Alarm clock\n");
   MPI_Finalize();
   exit(1);
+}
+
+/*
+ * PAPI helpers
+ */
+static void PAPI_complain(int err, const char* msg) {
+  complain(EXIT_FAILURE, 0, "PAPI %s: %s", msg, PAPI_strerror(err));
+}
+
+/*
+ * setup PAPI for performance monitoring.
+ */
+static int PAPI_prepare(int EventSet) {
+  int tmp[MAX_EVENTS];
+  int i, rv;
+
+  for (i = 0; i < g.n; i++) {
+    rv = PAPI_event_name_to_code(g.names[i], &tmp[i]);
+    if (rv != PAPI_OK) {
+      PAPI_complain(rv, g.names[i]);
+    }
+  }
+
+  rv = PAPI_add_events(EventSet, tmp, g.n);
+  if (rv != PAPI_OK) {
+    PAPI_complain(rv, "add events");
+  }
+
+  return EventSet;
+}
+
+/*
+ * start monitoring.
+ */
+static void PAPI_run(int EventSet) {
+  int rv = PAPI_start(EventSet);
+  if (rv != PAPI_OK) PAPI_complain(rv, "start");
+}
+
+/*
+ * reset all counters.
+ */
+static void PAPI_clear(int EventSet) {
+  int rv = PAPI_reset(EventSet);
+  if (rv != PAPI_OK) PAPI_complain(rv, "reset");
+}
+
+/*
+ * read current counter value.
+ */
+static void PAPI_fetch(int EventSet, long long* value) {
+  int rv = PAPI_read(EventSet, value);
+  if (rv != PAPI_OK) PAPI_complain(rv, "read");
+}
+
+/*
+ * report
+ */
+static void report(const long long* value) {
+  printf("\n");
+  for (int i = 0; i < g.n; i++) {
+    printf("%s: %lld\n", g.names[i], value[i]);
+  }
+  printf("\n");
 }
 
 /*
@@ -167,6 +219,13 @@ int main(int argc, char* argv[]) {
 
   g.timeout = DEF_TIMEOUT;
 
+  g.names[0] = "PAPI_L1_DCM";
+  g.names[1] = "PAPI_L1_DCA";
+  g.names[2] = "PAPI_L2_DCM";
+  g.names[3] = "PAPI_L2_DCA";
+
+  g.n = 4;
+
   while ((ch = getopt(argc, argv, "t:")) != -1) {
     switch (ch) {
       case 't':
@@ -181,7 +240,17 @@ int main(int argc, char* argv[]) {
   argc -= optind;
   argv += optind;
 
+  if (argc != 0) {
+    for (int i = 0; i < argc; i++) {
+      g.names[i] = argv[i];
+    }
+    g.n = argc;
+  }
+
   if (myrank == 0) {
+    printf("== Events:\n");
+    for (int i = 0; i < g.n; i++) printf(" > %s\n", g.names[i]);
+    printf("\n");
     printf("== Program options:\n");
     printf(" > MPI_rank   = %d\n", myrank);
     printf(" > MPI_size   = %d\n", g.size);
@@ -202,7 +271,7 @@ int main(int argc, char* argv[]) {
 
 static void doit() {
   int EventSet = PAPI_NULL;
-  long long value;
+  long long value[MAX_EVENTS];
   int rv;
 
   if (PAPI_library_init(PAPI_VER_CURRENT) != PAPI_VER_CURRENT)
@@ -213,17 +282,15 @@ static void doit() {
   rv = PAPI_create_eventset(&EventSet);
   if (rv != PAPI_OK) PAPI_complain(rv, "create event set");
 
-  rv = PAPI_add_event(EventSet, PAPI_TOT_INS);
-  if (rv != PAPI_OK) PAPI_complain(rv, "add event");
-
-  rv = PAPI_start(EventSet);
-  if (rv != PAPI_OK) PAPI_complain(rv, "start");
+  EventSet = PAPI_prepare(EventSet);
+  PAPI_run(EventSet);
 
   for (;;) {
     PAPI_clear(EventSet);
     runops(1 << 20);
 
-    PAPI_fetch(EventSet, &value);
+    PAPI_fetch(EventSet, value);
+    report(value);
     break;
   }
 
@@ -242,7 +309,7 @@ static int runops(size_t sz) {
     for (size_t i = 0; i < sz; i++) {
       mem[rand() % sz]++;
     }
-    fprintf(stderr, "%d MiB: OK\n", int(sz >> 20));
+    printf("%d MiB: OK\n", int(sz >> 20));
     return 0;
   }
 }
