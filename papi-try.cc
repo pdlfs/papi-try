@@ -122,7 +122,7 @@ static int PAPI_prepare(int EventSet) {
   int i, rv;
 
   for (i = 0; i < g.n; i++) {
-    rv = PAPI_event_name_to_code(g.names[i], &tmp[i]);
+    rv = PAPI_event_name_to_code(const_cast<char*>(g.names[i]), &tmp[i]);
     if (rv != PAPI_OK) {
       PAPI_complain(rv, g.names[i]);
     }
