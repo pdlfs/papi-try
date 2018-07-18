@@ -33,9 +33,155 @@
  * on other people's machines
  */
 
-#include <papi.h>
+#include <errno.h>
+#include <getopt.h>
+#include <signal.h>
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
 #include <numa.h>
+#include <papi.h>
+#include <unistd.h>
+
+#include <mpi.h>
+
+/*
+ * helper/utility functions, included inline here so we are self-contained
+ * in one single source file...
+ */
+static char* argv0; /* argv[0], program name */
+static int myrank = 0;
+
+/*
+ * vcomplain/complain about something.  if ret is non-zero we exit(ret)
+ * after complaining.  if r0only is set, we only print if myrank == 0.
+ */
+static void vcomplain(int ret, int r0only, const char* format, va_list ap) {
+  if (!r0only || myrank == 0) {
+    fprintf(stderr, "%s: ", argv0);
+    vfprintf(stderr, format, ap);
+    fprintf(stderr, "\n");
+  }
+  if (ret) {
+    MPI_Finalize();
+    exit(ret);
+  }
+}
+
+static void complain(int ret, int r0only, const char* format, ...) {
+  va_list ap;
+  va_start(ap, format);
+  vcomplain(ret, r0only, format, ap);
+  va_end(ap);
+}
+
+/*
+ * default values
+ */
+#define DEF_TIMEOUT 120 /* alarm timeout */
+
+/*
+ * gs: shared global data (e.g. from the command line)
+ */
+static struct gs {
+  int size;    /* world size (from MPI) */
+  int timeout; /* alarm timeout */
+} g;
+
+/*
+ * alarm signal handler
+ */
+static void sigalarm(int foo) {
+  fprintf(stderr, "SIGALRM detected (%d)\n", myrank);
+  fprintf(stderr, "Alarm clock\n");
+  MPI_Finalize();
+  exit(1);
+}
+
+/*
+ * usage
+ */
+static void usage(const char* msg) {
+  /* only have rank 0 print usage error message */
+  if (myrank) goto skip_prints;
+
+  if (msg) fprintf(stderr, "%s: %s\n", argv0, msg);
+  fprintf(stderr, "usage: %s [options]\n", argv0);
+  fprintf(stderr, "\noptions:\n");
+  fprintf(stderr, "\t-t sec      timeout (alarm), in seconds\n");
+
+skip_prints:
+  MPI_Finalize();
+  exit(1);
+}
+
+/*
+ * forward prototype decls.
+ */
+static void doit();
+
+/*
+ * main program.
+ */
 
 int main(int argc, char* argv[]) {
+  int ch;
+
+  argv0 = argv[0];
+
+  /* MPI wants us to call this early as possible */
+  if (MPI_Init(&argc, &argv) != MPI_SUCCESS) {
+    complain(EXIT_FAILURE, 1, "%s: MPI_Init failed.  MPI is required.", argv0);
+  }
+
+  /* We want lines even if we are writing to a pipe */
+  setlinebuf(stdout);
+
+  memset(&g, 0, sizeof(g));
+
+  if (MPI_Comm_rank(MPI_COMM_WORLD, &myrank) != MPI_SUCCESS)
+    complain(EXIT_FAILURE, 0, "unable to get MPI rank");
+  if (MPI_Comm_size(MPI_COMM_WORLD, &g.size) != MPI_SUCCESS)
+    complain(EXIT_FAILURE, 0, "unable to get MPI size");
+
+  g.timeout = DEF_TIMEOUT;
+
+  while ((ch = getopt(argc, argv, "t:")) != -1) {
+    switch (ch) {
+      case 't':
+        g.timeout = atoi(optarg);
+        if (g.timeout < 0) usage("bad timeout");
+        break;
+      default:
+        usage(NULL);
+    }
+  }
+
+  argc -= optind;
+  argv += optind;
+
+  if (myrank == 0) {
+    printf("== Program options:\n");
+    printf(" > MPI_rank   = %d\n", myrank);
+    printf(" > MPI_size   = %d\n", g.size);
+    printf(" > timeout    = %d secs\n", g.timeout);
+    printf("\n");
+  }
+
+  signal(SIGALRM, sigalarm);
+  alarm(g.timeout);
+
+  doit();
+
+  MPI_Barrier(MPI_COMM_WORLD);
+  MPI_Finalize();
+
   return 0;
+}
+
+static void doit() {
+  //
 }
