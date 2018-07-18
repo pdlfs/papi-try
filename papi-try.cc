@@ -44,6 +44,7 @@
 
 #include <numa.h>
 #include <papi.h>
+#include <pthread.h>
 #include <unistd.h>
 
 #include <mpi.h>
@@ -76,6 +77,10 @@ static void complain(int ret, int r0only, const char* format, ...) {
   va_start(ap, format);
   vcomplain(ret, r0only, format, ap);
   va_end(ap);
+}
+
+static void PAPI_complain(int err, const char* msg) {
+  complain(EXIT_FAILURE, 0, "PAPI %s: %s", msg, PAPI_strerror(err));
 }
 
 /*
@@ -121,12 +126,12 @@ skip_prints:
 /*
  * forward prototype decls.
  */
+static int runops(size_t mb);
 static void doit();
 
 /*
  * main program.
  */
-
 int main(int argc, char* argv[]) {
   int ch;
 
@@ -134,7 +139,7 @@ int main(int argc, char* argv[]) {
 
   /* MPI wants us to call this early as possible */
   if (MPI_Init(&argc, &argv) != MPI_SUCCESS) {
-    complain(EXIT_FAILURE, 1, "%s: MPI_Init failed.  MPI is required.", argv0);
+    complain(EXIT_FAILURE, 1, "MPI_Init failed.  MPI is required.");
   }
 
   /* We want lines even if we are writing to a pipe */
@@ -183,5 +188,51 @@ int main(int argc, char* argv[]) {
 }
 
 static void doit() {
-  //
+  int EventSet = PAPI_NULL;
+  long long value;
+  int rv;
+
+  if (PAPI_library_init(PAPI_VER_CURRENT) != PAPI_VER_CURRENT)
+    complain(EXIT_FAILURE, 0, "PAPI Init failed");
+
+  rv = PAPI_thread_init(pthread_self);
+  if (rv != PAPI_OK) PAPI_complain(rv, "thread init");
+  rv = PAPI_create_eventset(&EventSet);
+  if (rv != PAPI_OK) PAPI_complain(rv, "create event set");
+
+  rv = PAPI_add_event(EventSet, PAPI_TOT_INS);
+  if (rv != PAPI_OK) PAPI_complain(rv, "add event");
+
+  rv = PAPI_start(EventSet);
+  if (rv != PAPI_OK) PAPI_complain(rv, "start");
+
+  for (;;) {
+    rv = PAPI_reset(EventSet);
+    if (rv != PAPI_OK) PAPI_complain(rv, "reset");
+
+    runops(1 << 20);
+
+    rv = PAPI_read(EventSet, &value);
+    if (rv != PAPI_OK) PAPI_complain(rv, "read");
+    break;
+  }
+
+  PAPI_shutdown();
+}
+
+static int runops(size_t sz) {
+  unsigned char* mem;
+
+  mem = static_cast<unsigned char*>(malloc(sz));
+  if (!mem) {
+    fprintf(stderr, "Cannot alloc memory, %d MiB: %s\n", int(sz >> 20),
+            strerror(errno));
+    return -1;
+  } else {
+    for (size_t i = 0; i < sz; i++) {
+      mem[rand() % sz]++;
+    }
+    fprintf(stderr, "%d MiB: OK\n", int(sz >> 20));
+    return 0;
+  }
 }
