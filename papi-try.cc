@@ -118,19 +118,18 @@ static void PAPI_complain(int err, const char* msg) {
  * setup PAPI for performance monitoring.
  */
 static int PAPI_prepare(int EventSet) {
-  int tmp[MAX_EVENTS];
-  int i, rv;
+  int tmp, rv;
 
-  for (i = 0; i < g.n; i++) {
-    rv = PAPI_event_name_to_code(const_cast<char*>(g.names[i]), &tmp[i]);
+  for (int i = 0; i < g.n; i++) {
+    rv = PAPI_event_name_to_code(const_cast<char*>(g.names[i]), &tmp);
     if (rv != PAPI_OK) {
       PAPI_complain(rv, g.names[i]);
+    } else {
+      rv = PAPI_add_event(EventSet, tmp);
+      if (rv != PAPI_OK) {
+        PAPI_complain(rv, "add events");
+      }
     }
-  }
-
-  rv = PAPI_add_events(EventSet, tmp, g.n);
-  if (rv != PAPI_OK) {
-    PAPI_complain(rv, "add events");
   }
 
   return EventSet;
