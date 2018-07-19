@@ -115,6 +115,21 @@ static void PAPI_complain(int err, const char* msg) {
 }
 
 /*
+ * report hw info.
+ */
+static void PAPI_info() {
+  const PAPI_hw_info_t* hw = PAPI_get_hardware_info();
+  printf("== PAPI info:\n");
+  printf("#CPU: %d\n", hw->ncpu);
+  printf("Threads: %d\n", hw->threads);
+  printf("Cores: %d\n", hw->cores);
+  printf("Sockets: %d\n", hw->sockets);
+  printf("Nodes: %d\n", hw->nnodes);
+  printf("Total CPU: %d\n", hw->totalcpus);
+  printf("\n");
+}
+
+/*
  * setup PAPI for performance monitoring.
  */
 static int PAPI_prepare(int EventSet) {
@@ -281,6 +296,7 @@ static void doit() {
   rv = PAPI_create_eventset(&EventSet);
   if (rv != PAPI_OK) PAPI_complain(rv, "create event set");
 
+  PAPI_info();
   EventSet = PAPI_prepare(EventSet);
   PAPI_run(EventSet);
 
