@@ -120,12 +120,12 @@ static void PAPI_complain(int err, const char* msg) {
 static void PAPI_info() {
   const PAPI_hw_info_t* hw = PAPI_get_hardware_info();
   printf("== PAPI info:\n");
-  printf("#CPU: %d\n", hw->ncpu);
-  printf("Threads: %d\n", hw->threads);
-  printf("Cores: %d\n", hw->cores);
+  printf("Threads: %d per core\n", hw->threads);
+  printf("Cores: %d per socket\n", hw->cores);
   printf("Sockets: %d\n", hw->sockets);
-  printf("Nodes: %d\n", hw->nnodes);
   printf("Total CPU: %d\n", hw->totalcpus);
+  const PAPI_component_info_t* c = PAPI_get_component_info(0);
+  printf("Cntr: %d\n", c->num_cntrs);
   printf("\n");
 }
 
