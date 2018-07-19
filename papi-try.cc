@@ -137,7 +137,9 @@ static void complain(int ret, int r0only, const char* format, ...) {
  * default values
  */
 #define DEF_TIMEOUT 120 /* alarm timeout */
-#define DEF_MAXMB 1024
+#define DEF_MINMB 1
+#define DEF_MAXMB 8
+#define DEF_MOPS 8
 
 /*
  * gs: shared global data (e.g. from the command line)
@@ -145,7 +147,9 @@ static void complain(int ret, int r0only, const char* format, ...) {
 static struct gs {
   int size;                      /* world size (from MPI) */
   int timeout;                   /* alarm timeout */
+  int minmb;                     /* min memory to test (MiB) */
   int maxmb;                     /* max memory to test (MiB) */
+  int mops;                      /* millions of memory ops to perform */
   const char* names[MAX_EVENTS]; /* names of the events to monitor */
   int n;                         /* number of events */
 } g;
@@ -265,7 +269,9 @@ static void usage(const char* msg) {
   if (msg) fprintf(stderr, "%s: %s\n", argv0, msg);
   fprintf(stderr, "usage: %s [options] papi events\n", argv0);
   fprintf(stderr, "\noptions:\n");
-  fprintf(stderr, "\t-m MiB      max memory to test\n");
+  fprintf(stderr, "\t-c          millions of memory ops to perform\n");
+  fprintf(stderr, "\t-n MiB      min memory to allocate\n");
+  fprintf(stderr, "\t-m MiB      max memory to allocate\n");
   fprintf(stderr, "\t-t sec      timeout (alarm), in seconds\n");
 
 skip_prints:
@@ -303,7 +309,9 @@ int main(int argc, char* argv[]) {
     complain(EXIT_FAILURE, 0, "unable to get MPI size");
 
   g.timeout = DEF_TIMEOUT;
+  g.minmb = DEF_MINMB;
   g.maxmb = DEF_MAXMB;
+  g.mops = DEF_MOPS;
 
   g.names[0] = "PAPI_L1_DCM";
   g.names[1] = "PAPI_L1_DCA";
@@ -312,8 +320,16 @@ int main(int argc, char* argv[]) {
 
   g.n = 4;
 
-  while ((ch = getopt(argc, argv, "m:t:")) != -1) {
+  while ((ch = getopt(argc, argv, "c:n:m:t:")) != -1) {
     switch (ch) {
+      case 'c':
+        g.mops = atoi(optarg);
+        if (g.mops < 0) usage("bad ops num");
+        break;
+      case 'n':
+        g.minmb = atoi(optarg);
+        if (g.minmb < 0) usage("bad memory size");
+        break;
       case 'm':
         g.maxmb = atoi(optarg);
         if (g.maxmb < 0) usage("bad memory size");
@@ -345,7 +361,9 @@ int main(int argc, char* argv[]) {
     printf("== Program options:\n");
     printf("MPI_rank   = %d\n", myrank);
     printf("MPI_size   = %d\n", g.size);
+    printf("Min memory = %d MiB\n", g.minmb);
     printf("Max memory = %d MiB\n", g.maxmb);
+    printf("Num Ops    = %d M\n", g.mops);
     printf("Timeout    = %d secs\n", g.timeout);
     printf("\n");
     NUMA_info();
@@ -381,8 +399,9 @@ static void doit() {
   EventSet = PAPI_prepare(EventSet);
   PAPI_run(EventSet);
 
+  const size_t min_sz = static_cast<size_t>(g.minmb) << 20;
   const size_t max_sz = static_cast<size_t>(g.maxmb) << 20;
-  for (size_t sz = (1 << 20); sz <= max_sz; sz <<= 1) {
+  for (size_t sz = min_sz; sz <= max_sz; sz <<= 1) {
     PAPI_clear(EventSet);
     MPI_Barrier(MPI_COMM_WORLD);
     if (runops(sz) != 0) {
@@ -412,7 +431,8 @@ static int runops(size_t sz) {
     return -1;
   } else {
     t = PAPI_get_real_usec();
-    for (size_t i = 0; i < sz; i++) {
+    const size_t ops = static_cast<size_t>(g.mops) << 20;
+    for (size_t i = 0; i < ops; i++) {
       mem[murmurhash64(&i, sizeof(i), myrank) % sz]++;
     }
     t = PAPI_get_real_usec() - t;
