@@ -198,7 +198,6 @@ static void PAPI_fetch(int EventSet, long long* value) {
  * report
  */
 static void report(const long long* value) {
-  printf("\n");
   for (int i = 0; i < g.n; i++) {
     printf("%s: %lld\n", g.names[i], value[i]);
   }
@@ -253,6 +252,7 @@ int main(int argc, char* argv[]) {
     complain(EXIT_FAILURE, 0, "unable to get MPI size");
 
   g.timeout = DEF_TIMEOUT;
+  g.maxmb = DEF_MAXMB;
 
   g.names[0] = "PAPI_L1_DCM";
   g.names[1] = "PAPI_L1_DCA";
@@ -294,8 +294,8 @@ int main(int argc, char* argv[]) {
     printf("== Program options:\n");
     printf("MPI_rank   = %d\n", myrank);
     printf("MPI_size   = %d\n", g.size);
-    printf("max memory = %d MiB\n", g.maxmb);
-    printf("timeout    = %d secs\n", g.timeout);
+    printf("Max memory = %d MiB\n", g.maxmb);
+    printf("Timeout    = %d secs\n", g.timeout);
     printf("\n");
     NUMA_info();
   }
