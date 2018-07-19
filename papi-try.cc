@@ -417,7 +417,7 @@ static int runops(size_t sz) {
       mem[murmurhash64(&i, sizeof(i), myrank) % sz]++;
     }
     t = PAPI_get_real_usec() - t;
-    printf(">> %d MiB: %.3f msec\n", int(sz >> 20), 1.0 * t / 1000);
+    printf("> %d MiB: %.3f msec\n", int(sz >> 20), 1.0 * t / 1000);
     free(mem);
     return 0;
   }
