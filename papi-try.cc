@@ -293,6 +293,7 @@ static void doit() {
     break;
   }
 
+  PAPI_destroy_eventset(&EventSet);
   PAPI_shutdown();
 }
 
@@ -309,6 +310,7 @@ static int runops(size_t sz) {
       mem[rand() % sz]++;
     }
     printf("%d MiB: OK\n", int(sz >> 20));
+    free(mem);
     return 0;
   }
 }
