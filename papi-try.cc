@@ -313,7 +313,7 @@ int main(int argc, char* argv[]) {
 
 static void doit() {
   int EventSet = PAPI_NULL;
-  long long value[MAX_EVENTS];
+  long long value[MAX_EVENTS], reduc[MAX_EVENTS];
   int rv;
 
   if (PAPI_library_init(PAPI_VER_CURRENT) != PAPI_VER_CURRENT)
@@ -331,12 +331,17 @@ static void doit() {
   const size_t max_sz = static_cast<size_t>(g.maxmb) << 20;
   for (size_t sz = (1 << 20); sz <= max_sz; sz <<= 1) {
     PAPI_clear(EventSet);
+    MPI_Barrier(MPI_COMM_WORLD);
     if (runops(sz) != 0) {
       break;
     }
     PAPI_fetch(EventSet, value);
 
-    report(value);
+    MPI_Reduce(value, reduc, g.n, MPI_LONG_LONG_INT, MPI_SUM, 0,
+               MPI_COMM_WORLD);
+    if (myrank == 0) {
+      report(reduc);
+    }
   }
 
   PAPI_destroy_eventset(&EventSet);
@@ -345,6 +350,7 @@ static void doit() {
 
 static int runops(size_t sz) {
   unsigned char* mem;
+  long long t;
 
   mem = static_cast<unsigned char*>(malloc(sz));
   if (!mem) {
@@ -352,10 +358,12 @@ static int runops(size_t sz) {
             strerror(errno));
     return -1;
   } else {
+    t = PAPI_get_real_usec();
     for (size_t i = 0; i < sz; i++) {
       mem[rand() % sz]++;
     }
-    printf("== %d MiB: OK\n", int(sz >> 20));
+    t = PAPI_get_real_usec() - t;
+    printf("== %d MiB: %lld usec\n", int(sz >> 20), t);
     free(mem);
     return 0;
   }
