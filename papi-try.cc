@@ -356,7 +356,6 @@ int main(int argc, char* argv[]) {
 
   doit();
 
-  MPI_Barrier(MPI_COMM_WORLD);
   MPI_Finalize();
 
   return 0;
@@ -408,8 +407,8 @@ static int runops(size_t sz) {
 
   mem = static_cast<unsigned char*>(malloc(sz));
   if (!mem) {
-    fprintf(stderr, "Cannot alloc memory, %d MiB: %s\n", int(sz >> 20),
-            strerror(errno));
+    fprintf(stderr, "Cannot alloc memory (%d), %d MiB: %s\n", myrank,
+            int(sz >> 20), strerror(errno));
     return -1;
   } else {
     t = PAPI_get_real_usec();
@@ -417,7 +416,8 @@ static int runops(size_t sz) {
       mem[murmurhash64(&i, sizeof(i), myrank) % sz]++;
     }
     t = PAPI_get_real_usec() - t;
-    printf("> %d MiB: %.3f msec\n", int(sz >> 20), 1.0 * t / 1000);
+    printf("%d MiB (%d): %.3f sec\n", int(sz >> 20), myrank,
+           1.0 * t / 1000 / 1000);
     free(mem);
     return 0;
   }
