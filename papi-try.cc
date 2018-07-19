@@ -108,6 +108,20 @@ static void sigalarm(int foo) {
 }
 
 /*
+ * NUMA info.
+ */
+static void NUMA_info() {
+  printf("== NUMA info:\n");
+  printf("Max nodes: %d\n", numa_max_node());
+  struct bitmask* info = numa_get_mems_allowed();
+  int n = numa_num_configured_cpus();
+  for (int i = 0; i < n; i++) {
+    printf("Node %d: %d\n", i, numa_bitmask_isbitset(info, i));
+  }
+  printf("\n");
+}
+
+/*
  * PAPI helpers
  */
 static void PAPI_complain(int err, const char* msg) {
@@ -120,10 +134,12 @@ static void PAPI_complain(int err, const char* msg) {
 static void PAPI_info() {
   const PAPI_hw_info_t* hw = PAPI_get_hardware_info();
   printf("== PAPI info:\n");
-  printf("Threads: %d per core\n", hw->threads);
-  printf("Cores: %d per socket\n", hw->cores);
+  printf("Hdw Threads per core: %d\n", hw->threads);
+  printf("Cores per Socket: %d\n", hw->cores);
   printf("Sockets: %d\n", hw->sockets);
-  printf("Total CPU: %d\n", hw->totalcpus);
+  printf("NUMA Nodes: %d\n", hw->nnodes);
+  printf("CPUs per Node: %d\n", hw->ncpu);
+  printf("Total CPUs: %d\n", hw->totalcpus);
   const PAPI_component_info_t* c = PAPI_get_component_info(0);
   printf("Cntr: %d\n", c->num_cntrs);
   printf("\n");
@@ -270,6 +286,7 @@ int main(int argc, char* argv[]) {
     printf(" > MPI_size   = %d\n", g.size);
     printf(" > timeout    = %d secs\n", g.timeout);
     printf("\n");
+    NUMA_info();
   }
 
   signal(SIGALRM, sigalarm);
