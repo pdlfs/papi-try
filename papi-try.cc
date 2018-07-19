@@ -324,7 +324,10 @@ static void doit() {
   rv = PAPI_create_eventset(&EventSet);
   if (rv != PAPI_OK) PAPI_complain(rv, "create event set");
 
-  PAPI_info();
+  if (myrank == 0) {
+    PAPI_info();
+  }
+
   EventSet = PAPI_prepare(EventSet);
   PAPI_run(EventSet);
 
@@ -363,7 +366,7 @@ static int runops(size_t sz) {
       mem[rand() % sz]++;
     }
     t = PAPI_get_real_usec() - t;
-    printf("== %d MiB: %lld usec\n", int(sz >> 20), t);
+    printf(">> %d MiB: %.3f msec\n", int(sz >> 20), 1.0 * t / 1000);
     free(mem);
     return 0;
   }
