@@ -86,6 +86,7 @@ static void complain(int ret, int r0only, const char* format, ...) {
  * default values
  */
 #define DEF_TIMEOUT 120 /* alarm timeout */
+#define DEF_MAXMB 1024
 
 /*
  * gs: shared global data (e.g. from the command line)
@@ -93,6 +94,7 @@ static void complain(int ret, int r0only, const char* format, ...) {
 static struct gs {
   int size;                      /* world size (from MPI) */
   int timeout;                   /* alarm timeout */
+  int maxmb;                     /* max memory to test (MiB) */
   const char* names[MAX_EVENTS]; /* names of the events to monitor */
   int n;                         /* number of events */
 } g;
@@ -211,8 +213,9 @@ static void usage(const char* msg) {
   if (myrank) goto skip_prints;
 
   if (msg) fprintf(stderr, "%s: %s\n", argv0, msg);
-  fprintf(stderr, "usage: %s [options]\n", argv0);
+  fprintf(stderr, "usage: %s [options] papi events\n", argv0);
   fprintf(stderr, "\noptions:\n");
+  fprintf(stderr, "\t-m MiB      max memory to test\n");
   fprintf(stderr, "\t-t sec      timeout (alarm), in seconds\n");
 
 skip_prints:
@@ -258,8 +261,12 @@ int main(int argc, char* argv[]) {
 
   g.n = 4;
 
-  while ((ch = getopt(argc, argv, "t:")) != -1) {
+  while ((ch = getopt(argc, argv, "m:t:")) != -1) {
     switch (ch) {
+      case 'm':
+        g.maxmb = atoi(optarg);
+        if (g.maxmb < 0) usage("bad memory size");
+        break;
       case 't':
         g.timeout = atoi(optarg);
         if (g.timeout < 0) usage("bad timeout");
@@ -273,6 +280,7 @@ int main(int argc, char* argv[]) {
   argv += optind;
 
   if (argc != 0) {
+    if (argc > MAX_EVENTS) usage("too many events");
     for (int i = 0; i < argc; i++) {
       g.names[i] = argv[i];
     }
@@ -281,12 +289,13 @@ int main(int argc, char* argv[]) {
 
   if (myrank == 0) {
     printf("== Events:\n");
-    for (int i = 0; i < g.n; i++) printf(" > %s\n", g.names[i]);
+    for (int i = 0; i < g.n; i++) printf("%s\n", g.names[i]);
     printf("\n");
     printf("== Program options:\n");
-    printf(" > MPI_rank   = %d\n", myrank);
-    printf(" > MPI_size   = %d\n", g.size);
-    printf(" > timeout    = %d secs\n", g.timeout);
+    printf("MPI_rank   = %d\n", myrank);
+    printf("MPI_size   = %d\n", g.size);
+    printf("max memory = %d MiB\n", g.maxmb);
+    printf("timeout    = %d secs\n", g.timeout);
     printf("\n");
     NUMA_info();
   }
@@ -319,13 +328,15 @@ static void doit() {
   EventSet = PAPI_prepare(EventSet);
   PAPI_run(EventSet);
 
-  for (;;) {
+  const size_t max_sz = static_cast<size_t>(g.maxmb) << 20;
+  for (size_t sz = (1 << 20); sz <= max_sz; sz <<= 1) {
     PAPI_clear(EventSet);
-    runops(1 << 20);
-
+    if (runops(sz) != 0) {
+      break;
+    }
     PAPI_fetch(EventSet, value);
+
     report(value);
-    break;
   }
 
   PAPI_destroy_eventset(&EventSet);
@@ -344,7 +355,7 @@ static int runops(size_t sz) {
     for (size_t i = 0; i < sz; i++) {
       mem[rand() % sz]++;
     }
-    printf("%d MiB: OK\n", int(sz >> 20));
+    printf("== %d MiB: OK\n", int(sz >> 20));
     free(mem);
     return 0;
   }
