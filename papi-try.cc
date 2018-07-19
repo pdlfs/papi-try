@@ -112,9 +112,11 @@ static void sigalarm(int foo) {
  */
 static void NUMA_info() {
   printf("== NUMA info:\n");
-  printf("Max nodes: %d\n", numa_max_node());
+  int m = numa_max_node();
+  printf("Num Nodes: %d\n", m + 1);
   struct bitmask* info = numa_get_mems_allowed();
   int n = numa_num_configured_cpus();
+  if (n > m + 1) n = m + 1;
   for (int i = 0; i < n; i++) {
     printf("Node %d: %d\n", i, numa_bitmask_isbitset(info, i));
   }
