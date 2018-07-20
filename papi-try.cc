@@ -217,7 +217,7 @@ static int PAPI_prepare(int EventSet) {
     } else {
       rv = PAPI_add_event(EventSet, tmp);
       if (rv != PAPI_OK) {
-        PAPI_complain(rv, "add events");
+        PAPI_complain(rv, g.names[i]);
       }
     }
   }
